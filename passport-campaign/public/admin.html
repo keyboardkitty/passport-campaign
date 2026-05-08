@@ -1,0 +1,129 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin — Passport Campaign</title><link rel="stylesheet" href="/css/style.css"></head>
+<body class="admin-body">
+<div id="loginScreen" class="login-wrapper">
+  <div class="login-card">
+    <h1>🌿 Admin</h1>
+    <p class="sub">Passport Campaign Management</p>
+    <div class="form-group"><input type="text" id="loginUser" placeholder="Username" autocomplete="username"></div>
+    <div class="form-group"><input type="password" id="loginPass" placeholder="Password" autocomplete="current-password"></div>
+    <button class="btn btn-primary" onclick="doLogin()">Login</button>
+  </div>
+</div>
+<div id="adminApp" class="hidden">
+  <div class="admin-header">
+    <h1>🌿 Campaign Admin</h1>
+    <button class="btn btn-sm btn-secondary" style="border-color:var(--mint-light);color:var(--mint-light);background:transparent" onclick="doLogout()">Logout</button>
+  </div>
+  <div class="admin-page">
+    <div class="admin-tabs" id="tabs">
+      <button class="admin-tab active" data-tab="dashboard">Dashboard</button>
+      <button class="admin-tab" data-tab="settings">Settings</button>
+      <button class="admin-tab" data-tab="merchants">Merchants</button>
+      <button class="admin-tab" data-tab="gold-prizes">Gold Prizes</button>
+      <button class="admin-tab" data-tab="customers">Customers</button>
+      <button class="admin-tab" data-tab="checkins">Check-ins</button>
+      <button class="admin-tab" data-tab="rewards">Rewards</button>
+      <button class="admin-tab" data-tab="lottery">Gold Draw</button>
+      <button class="admin-tab" data-tab="emails">Emails</button>
+    </div>
+    <div id="tabContent"></div>
+  </div>
+</div>
+<script>
+let token=localStorage.getItem('admin_token')||'';
+async function doLogin(){const u=document.getElementById('loginUser').value,p=document.getElementById('loginPass').value;const r=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});if(!r.ok){alert('Invalid credentials');return;}const d=await r.json();token=d.token;localStorage.setItem('admin_token',token);showAdmin();}
+function doLogout(){fetch('/api/admin/logout',{method:'POST',headers:{'x-admin-token':token}});token='';localStorage.removeItem('admin_token');document.getElementById('adminApp').classList.add('hidden');document.getElementById('loginScreen').classList.remove('hidden');}
+function showAdmin(){document.getElementById('loginScreen').classList.add('hidden');document.getElementById('adminApp').classList.remove('hidden');loadTab('dashboard');}
+async function checkAuth(){if(!token)return;const r=await fetch('/api/admin/stats',{headers:{'x-admin-token':token}});if(r.ok)showAdmin();else{token='';localStorage.removeItem('admin_token');}}
+async function api(p,m='GET',b=null){const o={method:m,headers:{'x-admin-token':token,'Content-Type':'application/json'}};if(b)o.body=JSON.stringify(b);const r=await fetch('/api/admin'+p,o);if(r.status===401){doLogout();return null;}if(p.includes('/export/'))return r;return r.json();}
+
+document.getElementById('tabs').addEventListener('click',e=>{if(e.target.classList.contains('admin-tab')){document.querySelectorAll('.admin-tab').forEach(t=>t.classList.remove('active'));e.target.classList.add('active');loadTab(e.target.dataset.tab);}});
+
+async function loadTab(tab){const el=document.getElementById('tabContent');el.innerHTML='<div class="loading"><div class="spinner"></div></div>';
+switch(tab){case 'dashboard':return rDash(el);case 'settings':return rSettings(el);case 'merchants':return rMerchants(el);case 'gold-prizes':return rGoldPrizes(el);case 'customers':return rCustomers(el);case 'checkins':return rCheckins(el);case 'rewards':return rRewards(el);case 'lottery':return rLottery(el);case 'emails':return rEmails(el);}}
+
+async function rDash(el){const s=await api('/stats');if(!s)return;el.innerHTML=`
+  <div class="stat-grid">
+    <div class="stat-box"><div class="num">${s.totalCustomers}</div><div class="label">Customers</div></div>
+    <div class="stat-box"><div class="num">${s.totalCheckins}</div><div class="label">Check-ins</div></div>
+    <div class="stat-box"><div class="num">${s.goldEligible}</div><div class="label">Gold Eligible</div></div>
+    <div class="stat-box"><div class="num">${s.totalWinners}</div><div class="label">Winners</div></div>
+  </div>
+  <div class="admin-card"><h3>Stamp Distribution</h3>${s.stampDist.length?s.stampDist.map(x=>`<div style="margin:4px 0">${x.stamps} stamp(s): <strong>${x.count}</strong> customer(s)</div>`).join(''):'<p style="color:#999">No data yet</p>'}</div>
+  <div class="admin-card"><h3>Rewards Issued</h3>${s.rewardStats.length?s.rewardStats.map(x=>`<div style="margin:4px 0"><span class="badge ${x.tier}">${x.tier}</span> ${x.count} issued</div>`).join(''):'<p style="color:#999">No rewards yet</p>'}</div>
+  <div class="admin-actions">
+    <button class="btn btn-sm btn-secondary" onclick="window.open('/api/admin/backup?token='+token)">⬇ Download Backup</button>
+    <button class="btn btn-sm" style="background:transparent;border:2px solid var(--red);color:var(--red)" onclick="archiveCampaign()">📦 Archive & Reset</button>
+  </div>`;}
+
+async function archiveCampaign(){if(!confirm('Archive all data and reset for new campaign?'))return;const r=await api('/archive','POST');if(r&&r.ok){alert('Archived: '+r.archive);loadTab('dashboard');}}
+
+async function rSettings(el){const s=await api('/settings');if(!s)return;el.innerHTML=`<div class="admin-card"><h3>Campaign Settings</h3>
+  <div class="form-group"><label>Campaign Name</label><input type="text" id="s_name" value="${s.campaign_name||''}"></div>
+  <div class="form-row"><div class="form-group"><label>Start Date</label><input type="date" id="s_start" value="${s.start_date||''}"></div><div class="form-group"><label>End Date</label><input type="date" id="s_end" value="${s.end_date||''}"></div></div>
+  <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button></div>`;}
+async function saveSettings(){await api('/settings','POST',{campaign_name:document.getElementById('s_name').value,start_date:document.getElementById('s_start').value,end_date:document.getElementById('s_end').value});alert('Saved!');}
+
+async function rMerchants(el){const ms=await api('/merchants');if(!ms)return;el.innerHTML=`<div class="admin-card"><h3>Merchants & Reward Configuration</h3><p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">Configure each store's name, staff code, and the rewards they provide at each tier.</p>
+  ${ms.map(m=>`<div class="admin-card" style="border-left:4px solid var(--sage)"><h3 style="margin-bottom:12px">${m.name} <span class="badge ${m.active?'welcome':'failed'}">${m.active?'Active':'Inactive'}</span></h3>
+    <div class="form-row"><div class="form-group"><label>Name</label><input id="mn_${m.id}" value="${m.name}"></div><div class="form-group"><label>Store Key</label><input id="mk_${m.id}" value="${m.store_key}"></div></div>
+    <div class="form-row"><div class="form-group"><label>Staff Code</label><input id="mc_${m.id}" value="${m.staff_code}"></div><div class="form-group"><label>Sort Order</label><input type="number" id="mo_${m.id}" value="${m.sort_order}"></div></div>
+    <div class="form-group"><label>🎀 Welcome Reward (given when customer checks in HERE)</label><input id="mw_${m.id}" value="${m.welcome_reward||''}"></div>
+    <div class="form-group"><label>🥉 Bronze Coupon (sent to customers who HAVEN'T visited here yet, at 2 stamps)</label><input id="mb_${m.id}" value="${m.bronze_coupon||''}"></div>
+    <div class="form-group"><label>🥈 Silver Coupon (sent to customers who HAVEN'T visited here yet, at 3 stamps)</label><input id="ms_${m.id}" value="${m.silver_coupon||''}"></div>
+    <div class="form-group"><label><input type="checkbox" id="ma_${m.id}" ${m.active?'checked':''}> Active</label></div>
+    <button class="btn btn-sm btn-primary" onclick="saveMerchant(${m.id})">Save</button>
+  </div>`).join('')}
+  <div class="admin-card"><h3>Add Merchant</h3><div class="form-row"><input placeholder="Name" id="newMN"><input placeholder="store-key" id="newMK"><input placeholder="Staff Code" id="newMC" value="1234"></div><button class="btn btn-sm btn-primary" onclick="addMerchant()">Add</button></div></div>`;}
+
+async function saveMerchant(id){await api(`/merchants/${id}`,'PUT',{name:document.getElementById(`mn_${id}`).value,store_key:document.getElementById(`mk_${id}`).value,staff_code:document.getElementById(`mc_${id}`).value,sort_order:parseInt(document.getElementById(`mo_${id}`).value)||0,active:document.getElementById(`ma_${id}`).checked?1:0,welcome_reward:document.getElementById(`mw_${id}`).value,bronze_coupon:document.getElementById(`mb_${id}`).value,silver_coupon:document.getElementById(`ms_${id}`).value});alert('Saved!');}
+async function addMerchant(){await api('/merchants','POST',{name:document.getElementById('newMN').value,store_key:document.getElementById('newMK').value,staff_code:document.getElementById('newMC').value||'1234'});loadTab('merchants');}
+
+async function rGoldPrizes(el){const ps=await api('/gold-prizes');if(!ps)return;el.innerHTML=`<div class="admin-card"><h3>🥇 Gold Prize (Grand Draw)</h3><p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">Customers who collect all 4 stamps enter the gold draw. Configure the grand prize here.</p>
+  <div class="scroll-table"><table class="admin-table"><thead><tr><th>Name</th><th>Description</th><th>Qty</th><th>Actions</th></tr></thead><tbody>
+  ${ps.map(p=>`<tr><td><input id="gpn_${p.id}" value="${p.name}" style="width:140px"></td><td><input id="gpd_${p.id}" value="${p.description}" style="width:180px"></td><td><input type="number" id="gpq_${p.id}" value="${p.quantity}" style="width:50px" min="1"></td><td><button class="btn btn-sm btn-primary" onclick="saveGP(${p.id})">Save</button> <button class="btn btn-sm" style="background:transparent;border:1.5px solid var(--red);color:var(--red)" onclick="delGP(${p.id})">✕</button></td></tr>`).join('')}
+  </tbody></table></div>
+  <div style="margin-top:16px;padding-top:16px;border-top:1px solid #eee"><h3>Add Prize</h3><div class="form-row"><input placeholder="Name" id="newGPN"><input placeholder="Description" id="newGPD"><input type="number" placeholder="Qty" id="newGPQ" value="1" style="width:60px" min="1"><button class="btn btn-sm btn-primary" style="width:auto" onclick="addGP()">Add</button></div></div></div>`;}
+async function saveGP(id){await api(`/gold-prizes/${id}`,'PUT',{name:document.getElementById(`gpn_${id}`).value,description:document.getElementById(`gpd_${id}`).value,quantity:parseInt(document.getElementById(`gpq_${id}`).value)||1});alert('Saved!');}
+async function delGP(id){if(!confirm('Delete?'))return;await api(`/gold-prizes/${id}`,'DELETE');loadTab('gold-prizes');}
+async function addGP(){await api('/gold-prizes','POST',{name:document.getElementById('newGPN').value,description:document.getElementById('newGPD').value,quantity:parseInt(document.getElementById('newGPQ').value)||1});loadTab('gold-prizes');}
+
+async function rCustomers(el){const cs=await api('/customers');if(!cs)return;el.innerHTML=`<div class="admin-card"><h3>Customers (${cs.length})</h3><div class="admin-actions"><button class="btn btn-sm btn-secondary" onclick="exportCSV('customers')">⬇ Export CSV</button></div>
+  <div class="scroll-table"><table class="admin-table"><thead><tr><th>Name</th><th>Email</th><th>Lang</th><th>Stamps</th><th>Joined</th></tr></thead><tbody>
+  ${cs.map(c=>`<tr><td>${c.name}</td><td>${c.email}</td><td>${c.language}</td><td><strong>${c.stamps}</strong></td><td>${(c.created_at||'').split('T')[0]}</td></tr>`).join('')}
+  </tbody></table></div></div>`;}
+
+async function rCheckins(el){const cs=await api('/checkins');if(!cs)return;el.innerHTML=`<div class="admin-card"><h3>Check-ins (${cs.length})</h3><div class="admin-actions"><button class="btn btn-sm btn-secondary" onclick="exportCSV('checkins')">⬇ Export CSV</button></div>
+  <div class="scroll-table"><table class="admin-table"><thead><tr><th>Customer</th><th>Email</th><th>Store</th><th>Service</th><th>Time</th></tr></thead><tbody>
+  ${cs.map(c=>`<tr><td>${c.customer_name}</td><td>${c.customer_email}</td><td>${c.merchant_name}</td><td>${c.service||'-'}</td><td>${c.created_at||''}</td></tr>`).join('')}
+  </tbody></table></div></div>`;}
+
+async function rRewards(el){const rs=await api('/rewards');if(!rs)return;el.innerHTML=`<div class="admin-card"><h3>Rewards Issued (${rs.length})</h3><div class="admin-actions"><button class="btn btn-sm btn-secondary" onclick="exportCSV('rewards')">⬇ Export CSV</button></div>
+  <div class="scroll-table"><table class="admin-table"><thead><tr><th>Customer</th><th>Tier</th><th>Store</th><th>Description</th><th>Time</th></tr></thead><tbody>
+  ${rs.map(r=>`<tr><td>${r.customer_name}</td><td><span class="badge ${r.tier}">${r.tier}</span></td><td>${r.merchant_name||'-'}</td><td>${r.description}</td><td>${r.created_at||''}</td></tr>`).join('')}
+  </tbody></table></div></div>`;}
+
+async function rLottery(el){const ws=await api('/winners');if(!ws)return;el.innerHTML=`<div class="admin-card"><h3>🥇 Gold Prize Draw</h3>
+  <div class="draw-section"><span style="font-weight:700">Draw winners:</span><input type="number" id="drawCount" value="1" min="1" max="100" style="width:80px">
+  <button class="btn btn-sm btn-primary" onclick="doDraw()">🎲 Draw</button><button class="btn btn-sm btn-secondary" onclick="viewEligible()">View Eligible</button></div>
+  <div id="drawResult"></div></div>
+  <div class="admin-card"><h3>Winners (${ws.length})</h3><div class="admin-actions"><button class="btn btn-sm btn-secondary" onclick="exportCSV('winners')">⬇ Export CSV</button>
+  <button class="btn btn-sm btn-primary" onclick="notifyAll()">📧 Notify All</button></div>
+  <div class="scroll-table"><table class="admin-table"><thead><tr><th>Name</th><th>Email</th><th>Prize</th><th>Drawn</th><th>Actions</th></tr></thead><tbody>
+  ${ws.map(w=>`<tr><td>${w.customer_name}</td><td>${w.customer_email}</td><td>${w.prize_name||'-'}</td><td>${w.drawn_at||''}</td>
+  <td><button class="btn btn-sm btn-secondary" onclick="notifyWinner(${w.id})">📧</button> <button class="btn btn-sm" style="background:transparent;border:1.5px solid var(--red);color:var(--red)" onclick="removeWinner(${w.id})">✕</button></td></tr>`).join('')}
+  </tbody></table></div></div>`;}
+async function doDraw(){const c=parseInt(document.getElementById('drawCount').value)||1;const r=await api('/draw','POST',{count:c});if(r&&r.winners){document.getElementById('drawResult').innerHTML=r.winners.length?`<div style="padding:12px;background:var(--mint-pale);border-radius:8px;margin-top:12px"><strong>${r.winners.length} winner(s)!</strong><br>${r.winners.map(w=>`${w.name} (${w.email})`).join('<br>')}</div>`:`<div style="padding:12px;background:#fff3e0;border-radius:8px;margin-top:12px">No eligible customers.</div>`;setTimeout(()=>loadTab('lottery'),2000);}}
+async function viewEligible(){const r=await api('/gold-eligible');if(r){document.getElementById('drawResult').innerHTML=r.length?`<div style="padding:12px;background:var(--mint-pale);border-radius:8px;margin-top:12px"><strong>${r.length} eligible:</strong><br>${r.map(c=>`${c.name} (${c.email}) — ${c.stamps} stamps`).join('<br>')}</div>`:`<div style="padding:12px;background:#fff3e0;border-radius:8px;margin-top:12px">No eligible customers.</div>`;}}
+async function notifyWinner(id){const r=await api(`/notify/${id}`,'POST');if(r)alert(r.simulated?'Email simulated (SMTP not configured)':r.success?'Email sent!':'Failed');}
+async function notifyAll(){if(!confirm('Send notification to all winners?'))return;const r=await api('/notify-all','POST');if(r)alert(`Sent: ${r.sent} emails`);}
+async function removeWinner(id){if(!confirm('Remove winner?'))return;await api(`/winners/${id}`,'DELETE');loadTab('lottery');}
+
+async function rEmails(el){const ls=await api('/emails');if(!ls)return;el.innerHTML=`<div class="admin-card"><h3>Email Logs (${ls.length})</h3>
+  <div class="scroll-table"><table class="admin-table"><thead><tr><th>Recipient</th><th>Subject</th><th>Status</th><th>Time</th></tr></thead><tbody>
+  ${ls.map(l=>`<tr><td>${l.recipient}</td><td>${l.subject}</td><td><span class="badge ${l.status==='sent'?'sent':l.status==='simulated'?'simulated':'failed'}">${l.status}</span></td><td>${l.sent_at||''}</td></tr>`).join('')}
+  </tbody></table></div></div>`;}
+
+function exportCSV(type){window.open(`/api/admin/export/${type}?token=${token}`);}
+checkAuth();
+</script></body></html>

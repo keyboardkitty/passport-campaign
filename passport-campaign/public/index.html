@@ -1,0 +1,41 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>Passport Campaign</title><link rel="stylesheet" href="/css/style.css"></head><body>
+<div class="page">
+  <div class="top-bar"><div class="logo" id="topTitle">PASSPORT</div><div class="lang-switcher" id="langSwitcher"></div></div>
+  <div class="page-inner" id="content"><div class="loading"><div class="spinner"></div></div></div>
+</div>
+<script src="/js/app.js"></script>
+<script>
+let storeParam = getUrlParam('store');
+async function pageInit() {
+  renderLangSwitcher(document.getElementById('langSwitcher'));
+  const campaign = await App.loadCampaign();
+  const s = campaign.settings;
+  if (App.email) { window.location.href = '/passport' + (storeParam ? '?store='+storeParam : ''); return; }
+  document.getElementById('content').innerHTML = `
+    <div class="hero"><h1>${App.t('welcome')}</h1><p>${App.t('intro')}</p></div>
+    <div class="card"><div class="card-title"><span style="font-size:18px">📋</span> ${App.t('how_it_works')}</div>
+      <ol class="steps"><li>${App.t('step1')}</li><li>${App.t('step2')}</li><li>${App.t('step3')}</li></ol></div>
+    <div class="card"><div class="card-title"><span style="font-size:18px">🎁</span> ${App.t('reward_tiers')}</div>
+      <div class="tiers">
+        <div class="tier-row welcome"><div class="tier-badge">🎀</div><div><div class="tier-name">${App.t('welcome_tier')}</div><div class="tier-desc">${App.t('welcome_desc')}</div></div></div>
+        <div class="tier-row bronze"><div class="tier-badge">🥉</div><div><div class="tier-name">${App.t('bronze_tier')}</div><div class="tier-desc">${App.t('bronze_desc')}</div></div></div>
+        <div class="tier-row silver"><div class="tier-badge">🥈</div><div><div class="tier-name">${App.t('silver_tier')}</div><div class="tier-desc">${App.t('silver_desc')}</div></div></div>
+        <div class="tier-row gold"><div class="tier-badge">🥇</div><div><div class="tier-name">${App.t('gold_tier')}</div><div class="tier-desc">${App.t('gold_desc')}</div></div></div>
+      </div></div>
+    <div class="card"><div class="card-title"><span style="font-size:18px">📅</span> ${App.t('campaign_period')}</div>
+      <div class="period-display">${s.start_date} ${App.t('to')} ${s.end_date}</div></div>
+    <div class="card"><div class="card-title"><span style="font-size:18px">✨</span> ${App.t('get_started')}</div>
+      <div class="form-group"><label>${App.t('your_name')}</label><input type="text" id="nameInput" autocomplete="name"></div>
+      <div class="form-group"><label>${App.t('your_email')}</label><input type="email" id="emailInput" autocomplete="email"></div>
+      <button class="btn btn-primary" onclick="handleEnter()">${App.t('enter')} →</button></div>`;
+}
+async function handleEnter() {
+  const name = document.getElementById('nameInput').value.trim();
+  const email = document.getElementById('emailInput').value.trim();
+  if (!name||!email) { showToast(App.t('missing_fields'),'error'); return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showToast(App.t('invalid_email'),'error'); return; }
+  try { await App.enter(name, email); window.location.href = '/passport' + (storeParam?'?store='+storeParam:''); }
+  catch(e) { showToast(App.t(e.message)||App.t('error_occurred'),'error'); }
+}
+App.loadTranslations().then(pageInit);
+</script></body></html>

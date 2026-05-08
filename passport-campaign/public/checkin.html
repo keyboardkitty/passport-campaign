@@ -1,0 +1,115 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>Check In</title><link rel="stylesheet" href="/css/style.css">
+<style>
+.reward-popup{position:fixed;top:0;left:0;right:0;bottom:0;z-index:200;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;padding:24px;opacity:0;pointer-events:none;transition:opacity 0.3s}
+.reward-popup.show{opacity:1;pointer-events:auto}
+.reward-popup-card{background:var(--white);border-radius:24px;padding:32px 24px;text-align:center;max-width:340px;width:100%;transform:scale(0.8);transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1)}
+.reward-popup.show .reward-popup-card{transform:scale(1)}
+.reward-popup-card::before{content:'';display:block;height:5px;background:linear-gradient(90deg,var(--sage-light),var(--gold),var(--sage-light));border-radius:4px;margin-bottom:20px}
+.rp-emoji{font-size:48px;margin-bottom:10px;display:inline-block}
+.rp-title{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700;color:var(--sage-dark);margin-bottom:12px}
+.rp-rewards{text-align:left;margin-bottom:20px}
+.rp-item{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:var(--mint-pale);border-radius:10px;margin-bottom:6px;border-left:3px solid var(--sage)}
+.rp-item .rp-icon{font-size:20px}
+.rp-item .rp-text{font-size:13px;color:var(--text)}.rp-item .rp-store{font-size:11px;color:var(--text-muted)}
+.rp-btn{display:inline-flex;padding:12px 36px;border:none;border-radius:var(--radius-sm);font-family:'Nunito',sans-serif;font-size:14px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,var(--sage),var(--sage-light));color:#fff}
+.confetti-box{position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:201;overflow:hidden}
+.confetti-p{position:absolute;top:-10px;opacity:0}
+@keyframes cFall{0%{opacity:1;transform:translateY(0) rotate(0)}25%{opacity:1}100%{opacity:0;transform:translateY(100vh) rotate(720deg)}}
+</style></head><body>
+<div class="page">
+  <div class="top-bar"><div class="logo">PASSPORT</div><div class="lang-switcher" id="langSwitcher"></div></div>
+  <div class="page-inner" id="content"><div class="loading"><div class="spinner"></div></div></div>
+  <div class="bottom-nav">
+    <button class="nav-btn" onclick="location.href='/'"><span class="nav-icon">🏠</span><span id="n1">Home</span></button>
+    <button class="nav-btn" onclick="location.href='/passport'"><span class="nav-icon">📘</span><span id="n2">Passport</span></button>
+    <button class="nav-btn active"><span class="nav-icon">✅</span><span id="n3">Check In</span></button>
+    <button class="nav-btn" onclick="App.logout()"><span class="nav-icon">🚪</span><span>Logout</span></button>
+  </div>
+</div>
+<div class="reward-popup" id="rewardPopup">
+  <div class="reward-popup-card">
+    <div class="rp-emoji" id="rpEmoji">🎉</div>
+    <div class="rp-title" id="rpTitle"></div>
+    <div class="rp-rewards" id="rpRewards"></div>
+    <button class="rp-btn" onclick="closePopup()">View Passport →</button>
+  </div>
+</div>
+<div class="confetti-box" id="confettiBox"></div>
+<script src="/js/app.js"></script>
+<script>
+let selectedMerchant = null;
+let sp = getUrlParam('store');
+
+async function pageInit() {
+  renderLangSwitcher(document.getElementById('langSwitcher'));
+  document.getElementById('n1').textContent=App.t('home');
+  document.getElementById('n2').textContent=App.t('my_passport');
+  document.getElementById('n3').textContent=App.t('check_in');
+  if (!App.email) { location.href='/'+(sp?'?store='+sp:''); return; }
+  const data = await App.getPassport();
+  if (!data) { App.logout(); return; }
+  const { checkins, merchants } = data;
+  const checkedIds = new Set(checkins.map(c=>c.merchant_id));
+  if (sp) { const m=merchants.find(x=>x.store_key===sp); if(m&&!checkedIds.has(m.id)) selectedMerchant=m.id; }
+  document.getElementById('content').innerHTML = `
+    <div class="hero" style="padding:20px"><h1 style="font-size:19px">${App.t('check_in')}</h1><p>${App.t('staff_code_hint')}</p></div>
+    <div class="card"><div class="card-title"><span style="font-size:18px">🏪</span> ${App.t('select_store')}</div>
+      <div class="store-grid">${merchants.map(m => {
+        const done=checkedIds.has(m.id);
+        return `<div class="store-option ${done?'disabled':''} ${selectedMerchant===m.id?'selected':''}" data-id="${m.id}" onclick="${done?'':`selectStore(${m.id})`}">${m.name}</div>`;
+      }).join('')}</div></div>
+    <div class="card ${selectedMerchant?'':'hidden'}" id="checkinForm">
+      <div class="form-group"><label>${App.t('service_desc')}</label><input type="text" id="serviceInput" placeholder=""></div>
+      <div class="form-group"><label>${App.t('staff_code')}</label><input type="text" id="codeInput" inputmode="numeric" maxlength="10"><div class="hint">${App.t('staff_code_hint')}</div></div>
+      <button class="btn btn-primary" id="submitBtn" onclick="handleCheckin()">${App.t('submit')} ✓</button>
+    </div>`;
+}
+
+function selectStore(id) {
+  selectedMerchant=id;
+  document.querySelectorAll('.store-option').forEach(el=>el.classList.toggle('selected',parseInt(el.dataset.id)===id));
+  document.getElementById('checkinForm').classList.remove('hidden');
+}
+
+async function handleCheckin() {
+  if (!selectedMerchant) { showToast(App.t('missing_fields'),'error'); return; }
+  const code=document.getElementById('codeInput').value.trim();
+  if (!code) { showToast(App.t('missing_fields'),'error'); return; }
+  const btn=document.getElementById('submitBtn'); btn.disabled=true;
+  try {
+    const result = await App.checkin(selectedMerchant, document.getElementById('serviceInput').value.trim(), code);
+    if (result.newRewards && result.newRewards.length > 0) showRewardPopup(result);
+    else { showToast(App.t('checkin_success'),'success'); setTimeout(()=>location.href='/passport'+(sp?'?store='+sp:''),1200); }
+  } catch(e) { showToast(App.t(e.message)||App.t('error_occurred'),'error'); btn.disabled=false; }
+}
+
+function showRewardPopup(result) {
+  const popup=document.getElementById('rewardPopup');
+  const tierEmoji = result.tier==='gold'?'👑':result.tier==='silver'?'🥈':result.tier==='bronze'?'🥉':'🎀';
+  document.getElementById('rpEmoji').textContent=tierEmoji;
+  document.getElementById('rpTitle').textContent=App.t('reward_unlocked');
+  document.getElementById('rpRewards').innerHTML = result.newRewards.map(r => `
+    <div class="rp-item"><div class="rp-icon">${r.tier==='welcome'?'🎀':r.tier==='bronze'?'🎟️':r.tier==='silver'?'⭐':'🏆'}</div>
+    <div><div class="rp-text">${r.description}</div><div class="rp-store">${App.t('from')} ${r.merchant}</div></div></div>
+  `).join('');
+  popup.classList.add('show');
+  spawnConfetti();
+}
+
+function closePopup() { location.href='/passport'+(sp?'?store='+sp:''); }
+
+function spawnConfetti() {
+  const box=document.getElementById('confettiBox'); box.innerHTML='';
+  const colors=['#c5a55a','#ddc47a','#5a7d6a','#7a9e8a','#e8b4b8','#c4956a','#d4b363','#f0f8f3'];
+  for(let i=0;i<35;i++){
+    const p=document.createElement('div'); p.className='confetti-p';
+    const sz=6+Math.random()*6;
+    p.style.left=Math.random()*100+'%'; p.style.width=sz+'px'; p.style.height=sz+'px';
+    p.style.background=colors[Math.floor(Math.random()*colors.length)];
+    p.style.borderRadius=Math.random()>0.5?'50%':'2px';
+    p.style.animation=`cFall ${2+Math.random()*2}s ease-out ${Math.random()*1}s forwards`;
+    box.appendChild(p);
+  }
+}
+App.loadTranslations().then(pageInit);
+</script></body></html>

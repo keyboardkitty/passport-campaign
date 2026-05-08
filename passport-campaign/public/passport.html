@@ -1,0 +1,123 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>My Passport</title><link rel="stylesheet" href="/css/style.css"></head><body>
+<div class="page">
+  <div class="top-bar"><div class="logo">PASSPORT</div><div class="lang-switcher" id="langSwitcher"></div></div>
+  <div class="page-inner" id="content"><div class="loading"><div class="spinner"></div></div></div>
+  <div class="bottom-nav">
+    <button class="nav-btn" onclick="location.href='/'"><span class="nav-icon">🏠</span><span id="n1">Home</span></button>
+    <button class="nav-btn active" onclick="location.href='/passport'"><span class="nav-icon">📘</span><span id="n2">Passport</span></button>
+    <button class="nav-btn" onclick="goCheckin()"><span class="nav-icon">✅</span><span id="n3">Check In</span></button>
+    <button class="nav-btn" onclick="App.logout()"><span class="nav-icon">🚪</span><span>Logout</span></button>
+  </div>
+</div>
+<script src="/js/app.js"></script>
+<script>
+let sp = getUrlParam('store');
+function goCheckin() { location.href='/checkin'+(sp?'?store='+sp:''); }
+
+async function pageInit() {
+  renderLangSwitcher(document.getElementById('langSwitcher'));
+  document.getElementById('n1').textContent=App.t('home');
+  document.getElementById('n2').textContent=App.t('my_passport');
+  document.getElementById('n3').textContent=App.t('check_in');
+  if (!App.email) { location.href='/'; return; }
+  const data = await App.getPassport();
+  if (!data) { App.logout(); return; }
+  const { customer, checkins, merchants, stamps, tier, rewards, winner, settings } = data;
+  const checkedIds = new Set(checkins.map(c=>c.merchant_id));
+  const el = document.getElementById('content');
+  const pct = stamps === 0 ? 0 : (stamps / merchants.length) * 100;
+  const tierName = tier ? App.t(tier+'_tier') : App.t('no_tier');
+  const tierColor = tier==='gold'?'var(--gold)':tier==='silver'?'var(--silver)':tier==='bronze'?'var(--bronze)':tier==='welcome'?'var(--sage)':'#ccc';
+
+  // Group rewards by tier
+  const rewardsByTier = {};
+  rewards.forEach(r => { if(!rewardsByTier[r.tier]) rewardsByTier[r.tier]=[]; rewardsByTier[r.tier].push(r); });
+
+  el.innerHTML = `
+    <div class="passport-card">
+      <div class="passport-header"><h2>${App.t('my_passport')}</h2><div class="sub">${customer.name} · ${customer.email}</div></div>
+      <div class="stamps-grid">
+        ${merchants.map((m,i) => {
+          const done = checkedIds.has(m.id);
+          return done ? `
+            <div class="stamp-slot stamped anim" style="animation-delay:${i*0.12}s">
+              <div class="stamp-seal" style="animation-delay:${i*0.12}s"><div class="stamp-seal-inner"><div class="seal-name">${m.name}</div><div class="seal-visited">${App.t('visited')}</div></div></div>
+            </div>` : `
+            <div class="stamp-slot"><span class="empty-icon">+</span><span class="store-name">${m.name}</span><span class="status-label">${App.t('not_stamped')}</span></div>`;
+        }).join('')}
+      </div>
+      <div class="progress-track">
+        <div class="progress-line"></div>
+        <div class="progress-fill" style="width:calc(${pct/100} * (100% - 48px))"></div>
+        <div class="progress-dots">
+          ${[1,2,3,4].map(n => `<div class="progress-dot ${stamps>=n?'reached':''} ${stamps===n?'current':''}">${n}</div>`).join('')}
+        </div>
+      </div>
+      <div class="progress-labels">
+        <span ${stamps>=1?'class="active"':''}>Start</span>
+        <span ${stamps>=2?'class="active"':''}>${App.t('bronze_tier')}</span>
+        <span ${stamps>=3?'class="active"':''}>${App.t('silver_tier')}</span>
+        <span ${stamps>=4?'class="active"':''}>${App.t('gold_tier')}</span>
+      </div>
+    </div>
+
+    <div class="card mt-16">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div><div style="font-size:12px;color:var(--text-light)">${App.t('stamps_collected')}</div><div style="font-size:26px;font-weight:800">${stamps} / ${merchants.length}</div></div>
+        <div style="text-align:right"><div style="font-size:12px;color:var(--text-light)">${App.t('current_tier')}</div><div style="font-size:16px;font-weight:700;color:${tierColor}">${tierName}</div></div>
+      </div>
+    </div>
+
+    ${winner ? `
+      <div class="winner-card">
+        <div class="wc-emoji wc-float">👑</div>
+        <div class="wc-title">${App.t('grand_prize_winner')}</div>
+        <div class="wc-sub">${App.t('congratulations')}</div>
+        <div class="wc-prize"><div class="wc-prize-icon">🥇</div><div style="text-align:left"><div class="wc-prize-name">${winner.prize_name||'Grand Prize'}</div><div class="wc-prize-desc">${winner.prize_desc||''}</div></div></div>
+        <div class="wc-note">${App.t('prize_details_sent')}<br>${App.t('show_to_redeem')}</div>
+      </div>
+    ` : ''}
+
+    ${rewards.length > 0 ? `
+      <div class="card mt-16">
+        <div class="card-title"><span style="font-size:18px">🎁</span> ${App.t('my_rewards')}</div>
+        ${rewards.map(r => `
+          <div class="reward-item ${r.tier}" id="reward-${r.id}">
+            <div class="reward-icon">${r.tier==='welcome'?'🎀':r.tier==='bronze'?'🥉':r.tier==='silver'?'🥈':'🥇'}</div>
+            <div class="reward-info" style="flex:1">
+              <div class="reward-tier">${App.t('reward_'+r.tier)}</div>
+              <div class="reward-desc">${r.description}</div>
+              ${r.merchant_name?`<div class="reward-store">${App.t('from')} ${r.merchant_name}</div>`:''}
+              ${r.expires_at?`<div class="reward-store" style="color:var(--text-muted)">${App.t('expires')}: ${r.expires_at.split('T')[0]}</div>`:''}
+            </div>
+            <button class="btn btn-sm btn-primary" style="flex-shrink:0;width:auto;padding:8px 14px;font-size:12px" onclick="useReward(${r.id})">${App.t('use_reward')}</button>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+
+    ${tier==='gold'&&!winner ? `
+      <div class="card mt-16" style="background:linear-gradient(135deg,#faf5e2,#fff);border-color:var(--gold);">
+        <div style="text-align:center"><div style="font-size:32px;margin-bottom:8px">🎊</div>
+        <div style="font-weight:700;color:var(--sg-d)">${App.t('gold_entered')}</div></div>
+      </div>
+    ` : stamps < merchants.length ? `
+      <button class="btn btn-primary mt-16" onclick="goCheckin()">${App.t('check_in')} →</button>
+    ` : ''}
+  `;
+}
+
+async function useReward(id) {
+  if (!confirm(App.t('confirm_use'))) return;
+  try {
+    await App.redeemReward(id);
+    showToast(App.t('reward_used'), 'success');
+    const el = document.getElementById('reward-'+id);
+    if (el) { el.style.transition='all 0.4s'; el.style.opacity='0'; el.style.transform='translateX(60px)'; setTimeout(()=>el.remove(), 400); }
+  } catch(e) {
+    showToast(App.t(e.message)||App.t('error_occurred'), 'error');
+  }
+}
+
+App.loadTranslations().then(pageInit);
+</script></body></html>
